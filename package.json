@@ -1,0 +1,55 @@
+{
+  "name": "@orderly-predict/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for Orderly Predict – prediction market API client with wallet connectivity and SIWE authentication",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "biome check src/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "orderly",
+    "predict",
+    "prediction-market",
+    "sdk",
+    "web3",
+    "siwe",
+    "eip-4361"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/skewballl/orderly-predict-sdk.git"
+  },
+  "dependencies": {
+    "viem": "^2.21.0",
+    "siwe": "^2.3.2",
+    "eventemitter3": "^5.0.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "peerDependencies": {
+    "viem": ">=2.0.0"
+  }
+}
