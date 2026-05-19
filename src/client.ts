@@ -2,6 +2,7 @@ import EventEmitter from "eventemitter3";
 import { ApiClient } from "./api.js";
 import { AuthenticationError, SessionExpiredError } from "./errors.js";
 import { SessionManager } from "./session.js";
+import { CustomWalletAdapter } from "./wallet.js";
 import { WebSocketManager } from "./websocket.js";
 import type {
 	Balance,
@@ -29,7 +30,7 @@ export class OrderlyPredict extends EventEmitter<OrderlyPredictEvents> {
 	private wallet: WalletAdapter | null = null;
 	private readonly config: Required<
 		Pick<OrderlyPredictConfig, "apiUrl" | "wsUrl" | "chainId" | "sessionDurationSec">
-	>;
+	> & { brokerId?: string };
 
 	constructor(config: OrderlyPredictConfig) {
 		super();
@@ -42,12 +43,15 @@ export class OrderlyPredict extends EventEmitter<OrderlyPredictEvents> {
 			wsUrl,
 			chainId: config.chainId ?? DEFAULT_CHAIN_ID,
 			sessionDurationSec: config.sessionDurationSec ?? DEFAULT_SESSION_DURATION_SEC,
+			brokerId: config.brokerId,
 		};
 
 		this.sessionManager = new SessionManager(
 			this.config.chainId,
 			this.config.sessionDurationSec,
 			this.config.apiUrl,
+			config.authMode ?? "address",
+			config.chainNamespace ?? "evm",
 		);
 
 		this.api = new ApiClient(config, this.sessionManager);
@@ -71,6 +75,18 @@ export class OrderlyPredict extends EventEmitter<OrderlyPredictEvents> {
 		this.emit("sessionCreated", session);
 
 		return session;
+	}
+
+	/**
+	 * Connect with just an address (no wallet signing required).
+	 * Only works when authMode is "address" (the default).
+	 */
+	async connectWithAddress(address: string): Promise<Session> {
+		const adapter = new CustomWalletAdapter({
+			address,
+			signMessage: async () => "",
+		});
+		return this.connect(adapter);
 	}
 
 	async disconnect(): Promise<void> {

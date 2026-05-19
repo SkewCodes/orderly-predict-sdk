@@ -1,4 +1,4 @@
-import type { WalletAdapter } from "./types.js";
+import type { ChainNamespace, WalletAdapter } from "./types.js";
 import { WalletError } from "./errors.js";
 
 /**
@@ -169,6 +169,96 @@ export class CustomWalletAdapter implements WalletAdapter {
 	}
 }
 
+/**
+ * Wallet adapter for Solana wallets implementing the wallet-adapter-base interface.
+ * Works with Phantom, Solflare, Backpack, etc. via @solana/wallet-adapter.
+ *
+ * @example
+ * ```ts
+ * import { useWallet } from "@solana/wallet-adapter-react";
+ * import { SolanaWalletAdapter, OrderlyPredict } from "@orderly-predict/sdk";
+ *
+ * const { publicKey, signMessage, connected } = useWallet();
+ * const predict = new OrderlyPredict({ apiUrl: "...", chainNamespace: "solana" });
+ * await predict.connect(new SolanaWalletAdapter({ publicKey, signMessage, connected }));
+ * ```
+ */
+export class SolanaWalletAdapter implements WalletAdapter {
+	readonly chainNamespace: ChainNamespace = "solana";
+	private _connected = false;
+
+	constructor(private readonly solana: SolanaWalletLike) {}
+
+	async connect(): Promise<string> {
+		if (this.solana.connect) {
+			await this.solana.connect();
+		}
+		this._connected = true;
+		return this.getAddress();
+	}
+
+	async getAddress(): Promise<string> {
+		const pubkey = this.solana.publicKey;
+		if (!pubkey) throw new WalletError("Solana wallet not connected — no publicKey");
+		return typeof pubkey === "string" ? pubkey : pubkey.toBase58();
+	}
+
+	async signMessage(message: string): Promise<string> {
+		if (!this.solana.signMessage) {
+			throw new WalletError("Solana wallet does not support signMessage");
+		}
+		const encoded = new TextEncoder().encode(message);
+		const signatureBytes = await this.solana.signMessage(encoded);
+		return encodeBase58(signatureBytes);
+	}
+
+	isConnected(): boolean {
+		return this._connected || !!this.solana.connected;
+	}
+
+	async disconnect(): Promise<void> {
+		if (this.solana.disconnect) {
+			await this.solana.disconnect();
+		}
+		this._connected = false;
+	}
+}
+
+/**
+ * Bridge adapter for @orderly.network/js-sdk Account instances.
+ * Allows reusing an already-connected Orderly JS SDK wallet with the Predict SDK.
+ *
+ * @example
+ * ```ts
+ * import { useAccountInstance } from "@orderly.network/hooks";
+ * import { bridgeOrderlyWallet, OrderlyPredict } from "@orderly-predict/sdk";
+ *
+ * const account = useAccountInstance();
+ * const predict = new OrderlyPredict({ apiUrl: "..." });
+ * await predict.connect(bridgeOrderlyWallet(account));
+ * ```
+ */
+export function bridgeOrderlyWallet(orderlyAccount: OrderlyAccountLike): WalletAdapter {
+	return new CustomWalletAdapter({
+		address: orderlyAccount.address,
+		signMessage: (message: string) => orderlyAccount.signMessage(message),
+		onConnect: async () => {
+			if (!orderlyAccount.address) {
+				throw new WalletError("Orderly account not connected");
+			}
+		},
+	});
+}
+
+/**
+ * Minimal interface describing what we need from an @orderly.network/core Account.
+ * Avoids a hard dependency on the Orderly JS SDK package.
+ */
+export interface OrderlyAccountLike {
+	address: string;
+	signMessage(message: string): Promise<string>;
+}
+
 // ─── Minimal type declarations for injected providers ──────────────────────────
 
 interface EIP1193Provider {
@@ -180,8 +270,49 @@ interface ViemWalletClient {
 	signMessage(args: { account: `0x${string}`; message: string }): Promise<string>;
 }
 
+/**
+ * Minimal interface for Solana wallet-adapter compatible wallets.
+ * Matches the shape from @solana/wallet-adapter-base / useWallet().
+ */
+export interface SolanaWalletLike {
+	publicKey: { toBase58(): string } | string | null;
+	signMessage?: (message: Uint8Array) => Promise<Uint8Array>;
+	connected?: boolean;
+	connect?: () => Promise<void>;
+	disconnect?: () => Promise<void>;
+}
+
 declare global {
 	interface Window {
 		ethereum?: EIP1193Provider;
 	}
+}
+
+// ─── Base58 encoder (no external dependency) ────────────────────────────────────
+
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+function encodeBase58(bytes: Uint8Array): string {
+	const digits: number[] = [0];
+	for (const byte of bytes) {
+		let carry = byte;
+		for (let j = 0; j < digits.length; j++) {
+			carry += digits[j]! * 256;
+			digits[j] = carry % 58;
+			carry = (carry / 58) | 0;
+		}
+		while (carry > 0) {
+			digits.push(carry % 58);
+			carry = (carry / 58) | 0;
+		}
+	}
+	let result = "";
+	for (const byte of bytes) {
+		if (byte === 0) result += BASE58_ALPHABET[0];
+		else break;
+	}
+	for (let i = digits.length - 1; i >= 0; i--) {
+		result += BASE58_ALPHABET[digits[i]!];
+	}
+	return result;
 }

@@ -1,5 +1,5 @@
 import { SiweMessage } from "siwe";
-import type { Session, WalletAdapter } from "./types.js";
+import type { AuthMode, ChainNamespace, Session, WalletAdapter } from "./types.js";
 
 const DEFAULT_SESSION_DURATION_SEC = 86400; // 24 hours
 const DEFAULT_CHAIN_ID = 42161; // Arbitrum One
@@ -11,10 +11,94 @@ export class SessionManager {
 		private readonly chainId: number = DEFAULT_CHAIN_ID,
 		private readonly sessionDurationSec: number = DEFAULT_SESSION_DURATION_SEC,
 		private readonly apiUrl: string = "",
+		private readonly authMode: AuthMode = "address",
+		private readonly defaultChainNamespace: ChainNamespace = "evm",
 	) {}
 
 	async createSession(wallet: WalletAdapter): Promise<Session> {
 		const address = await wallet.getAddress();
+		const namespace = wallet.chainNamespace ?? this.defaultChainNamespace;
+
+		if (this.authMode === "address") {
+			return this.createAddressSession(address, namespace);
+		}
+
+		if (namespace === "solana") {
+			return this.createSignedMessageSession(wallet, address, namespace);
+		}
+
+		return this.createSiweSession(wallet, address);
+	}
+
+	private createAddressSession(address: string, namespace: ChainNamespace): Session {
+		const issuedAt = new Date().toISOString();
+		const expiresAt = new Date(
+			Date.now() + this.sessionDurationSec * 1000,
+		).toISOString();
+
+		this.session = {
+			address,
+			chainId: this.chainId,
+			chainNamespace: namespace,
+			nonce: "",
+			issuedAt,
+			expiresAt,
+			signature: "",
+			message: "",
+		};
+
+		return this.session;
+	}
+
+	/**
+	 * Signed message auth for Solana wallets (ed25519 signature over a plain text message).
+	 * Similar to SIWE but without EIP-4361 structure since Solana addresses aren't EVM-compatible.
+	 */
+	private async createSignedMessageSession(
+		wallet: WalletAdapter,
+		address: string,
+		namespace: ChainNamespace,
+	): Promise<Session> {
+		const nonce = this.generateNonce();
+		const issuedAt = new Date().toISOString();
+		const expiresAt = new Date(
+			Date.now() + this.sessionDurationSec * 1000,
+		).toISOString();
+
+		const domain = this.extractDomain(this.apiUrl);
+
+		const message = [
+			`${domain} wants you to sign in with your Solana account:`,
+			address,
+			"",
+			"Sign in to Orderly Predict",
+			"",
+			`URI: ${this.apiUrl}`,
+			`Nonce: ${nonce}`,
+			`Issued At: ${issuedAt}`,
+			`Expiration Time: ${expiresAt}`,
+		].join("\n");
+
+		const signature = await wallet.signMessage(message);
+
+		this.session = {
+			address,
+			chainId: this.chainId,
+			chainNamespace: namespace,
+			nonce,
+			issuedAt,
+			expiresAt,
+			signature,
+			message,
+		};
+
+		return this.session;
+	}
+
+	private async createSiweSession(
+		wallet: WalletAdapter,
+		address: string,
+	): Promise<Session> {
 		const nonce = this.generateNonce();
 		const issuedAt = new Date().toISOString();
 		const expiresAt = new Date(
@@ -41,6 +125,7 @@ export class SessionManager {
 		this.session = {
 			address,
 			chainId: this.chainId,
+			chainNamespace: "evm",
 			nonce,
 			issuedAt,
 			expiresAt,
@@ -73,12 +158,21 @@ export class SessionManager {
 		if (!this.session || this.isExpired()) {
 			return {};
 		}
-		return {
+
+		const headers: Record<string, string> = {
 			"x-user-address": this.session.address,
-			"x-auth-signature": this.session.signature,
-			"x-auth-message": this.session.message,
-			"x-auth-nonce": this.session.nonce,
+			"x-chain-namespace": this.session.chainNamespace,
 		};
+
+		if (this.authMode === "address") {
+			return headers;
+		}
+
+		headers["x-auth-signature"] = this.session.signature;
+		headers["x-auth-message"] = this.session.message;
+		headers["x-auth-nonce"] = this.session.nonce;
+
+		return headers;
 	}
 
 	clearSession(): void {

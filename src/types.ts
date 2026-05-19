@@ -66,13 +66,13 @@ export interface PlaceOrderRequest {
 	side: OrderSide;
 	orderType: OrderType;
 	priceBps?: number | null;
-	quantity: number;
+	quantity: string;
 }
 
 export interface PlaceOrderResponse {
 	orderId: string;
 	status: OrderStatus;
-	fills: Fill[];
+	fills: OrderFill[];
 }
 
 export interface CancelOrderResponse {
@@ -107,6 +107,19 @@ export interface Balance {
 // ─── Fills ─────────────────────────────────────────────────────────────────────
 
 export interface Fill {
+	id: string;
+	market_id: string;
+	maker_order_id: string;
+	taker_order_id: string;
+	maker_address: string;
+	taker_address: string;
+	price_bps: number;
+	quantity: number;
+	fee_amount: number;
+	created_at: string;
+}
+
+export interface OrderFill {
 	quantity: string;
 	priceBps: number;
 	feeAmount: string;
@@ -116,16 +129,16 @@ export interface Fill {
 
 export interface PriceLevel {
 	priceBps: number;
-	quantity: number;
+	quantity: string;
 	orderCount: number;
 }
 
 export interface OrderbookSnapshot {
-	type: "orderbook";
+	type?: "orderbook";
 	marketId: string;
 	bids: PriceLevel[];
 	asks: PriceLevel[];
-	timestamp: number;
+	timestamp?: number;
 }
 
 export interface TradeMessage {
@@ -141,6 +154,9 @@ export type WsMessage = OrderbookSnapshot | TradeMessage;
 
 // ─── SDK Config ────────────────────────────────────────────────────────────────
 
+export type AuthMode = "siwe" | "address";
+export type ChainNamespace = "evm" | "solana";
+
 export interface OrderlyPredictConfig {
 	/** Base URL for the REST API (e.g. "https://predict-api.orderly.network") */
 	apiUrl: string;
@@ -152,12 +168,26 @@ export interface OrderlyPredictConfig {
 	sessionDurationSec?: number;
 	/** Admin API key for admin-only endpoints */
 	adminApiKey?: string;
+	/** Broker ID for fee routing and analytics (e.g. "woofi") */
+	brokerId?: string;
+	/**
+	 * Auth mode: "siwe" requires wallet signature (EIP-4361), "address" sends
+	 * only the wallet address header (simpler, suitable for trusted environments).
+	 * Default: "address"
+	 */
+	authMode?: AuthMode;
+	/**
+	 * Chain namespace: "evm" for Ethereum-compatible chains, "solana" for Solana.
+	 * Affects address validation, signing format, and auth headers.
+	 * Default: auto-detected from connected wallet, or "evm"
+	 */
+	chainNamespace?: ChainNamespace;
 }
 
 // ─── Wallet / Auth ─────────────────────────────────────────────────────────────
 
 export interface WalletAdapter {
-	/** Get the connected wallet address */
+	/** Get the connected wallet address (hex for EVM, base58 for Solana) */
 	getAddress(): Promise<string>;
 	/** Sign a message and return the signature */
 	signMessage(message: string): Promise<string>;
@@ -167,11 +197,14 @@ export interface WalletAdapter {
 	connect(): Promise<string>;
 	/** Disconnect */
 	disconnect(): Promise<void>;
+	/** Chain namespace this wallet operates on. Defaults to "evm" if not specified. */
+	chainNamespace?: ChainNamespace;
 }
 
 export interface Session {
 	address: string;
 	chainId: number;
+	chainNamespace: ChainNamespace;
 	nonce: string;
 	issuedAt: string;
 	expiresAt: string;

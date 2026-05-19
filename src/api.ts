@@ -16,6 +16,7 @@ import type { SessionManager } from "./session.js";
 export class ApiClient {
 	private readonly baseUrl: string;
 	private readonly adminApiKey?: string;
+	private readonly brokerId?: string;
 
 	constructor(
 		config: OrderlyPredictConfig,
@@ -23,6 +24,7 @@ export class ApiClient {
 	) {
 		this.baseUrl = config.apiUrl.replace(/\/$/, "");
 		this.adminApiKey = config.adminApiKey;
+		this.brokerId = config.brokerId;
 	}
 
 	// ─── Markets ───────────────────────────────────────────────────────────────
@@ -127,6 +129,10 @@ export class ApiClient {
 		const headers: Record<string, string> = {
 			"Content-Type": "application/json",
 		};
+
+		if (this.brokerId) {
+			headers["x-broker-id"] = this.brokerId;
+		}
 
 		if (opts?.auth) {
 			const authHeaders = this.sessionManager.getAuthHeaders();

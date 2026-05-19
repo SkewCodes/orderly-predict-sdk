@@ -10,7 +10,10 @@ export {
 	InjectedWalletAdapter,
 	ViemWalletAdapter,
 	CustomWalletAdapter,
+	SolanaWalletAdapter,
+	bridgeOrderlyWallet,
 } from "./wallet.js";
+export type { OrderlyAccountLike, SolanaWalletLike } from "./wallet.js";
 
 // Session
 export { SessionManager } from "./session.js";
@@ -43,11 +46,14 @@ export type {
 	Position,
 	Balance,
 	Fill,
+	OrderFill,
 	PriceLevel,
 	OrderbookSnapshot,
 	TradeMessage,
 	WsMessage,
 	OrderlyPredictConfig,
+	AuthMode,
+	ChainNamespace,
 	WalletAdapter,
 	Session,
 	OrderlyPredictEvents,
